@@ -40,8 +40,8 @@ OUT_DIR = 'outputs/{}'.format(EXPERIMENT)
 def get_data_loaders(train_files, val_files, img_size=224):
     train_transform = Compose([
         ColorJitter(0.3, 0.3, 0.3, 0.3),
-        RandomResizedCrop(img_size, scale=(0.8, 1.2)),
-        RandomAffine(10.),
+        # RandomResizedCrop(img_size, scale=(0.8, 1.2)),
+        # RandomAffine(10.),
         RandomRotation(13.),
         RandomHorizontalFlip(),
         ToTensor(),
