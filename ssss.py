@@ -26,10 +26,6 @@ def get_data_loaders(val_files):
 
 
 def Gio_precision_recall(M, P):
-    M[M >= 128] = 255
-    M[M < 128] = 0
-    P[P >= 128] = 255
-    P[P < 128] = 0
     TP = len(np.where(P * M > 0)[0])  # AND between prediction (P) and ground truth (M)
     FP = len(np.where(cv2.subtract(P, M) > 0)[0])  # white pixels in P that don't have corresponding white pixels in M
     FN = len(np.where(cv2.subtract(M, P) > 0)[0])  # white pixels in M that don't have correspondence in P
@@ -59,8 +55,6 @@ def UNET_segmentation(image, output_size):
         outputs = model(inputs)
         output = outputs.cpu().numpy().reshape(112, 112) * 255
         output = cv2.resize(output.astype(np.uint8), (output_size, output_size))
-        output[output >= 128] = 255
-        output[output < 128] = 0
         return output
 
 
@@ -119,7 +113,7 @@ def main(list_of_models, dataset_path):
         unrolled_path = "/home/skeri/Saved_Data/Urolled_Dataset/Exit Signs by Distance/"
         zoom_path = "/home/skeri/Saved_Data/Zoom_BMP/Exit Signs by Distance/"
         # We want to estimate distances for images captured 2 to 8 meters away from the camera
-        for meters in range(9, 10):
+        for meters in range(2, 9):
             TP1 = TP2 = FP1 = FP2 = FN1 = FN2 = 0
             # Get images within image dataset
             image_directory = dataset_path + str(meters)
@@ -133,11 +127,16 @@ def main(list_of_models, dataset_path):
                 ARKIT_directory = glob.glob(image_directory + "/" + folders + "/*.txt")[0]
                 file_ARIKIT = open(ARKIT_directory, "r")
                 coreml_data = []
+                unrolled_path_imgs = ''
+                unrolled_path_masks = ''
+                unrolled_path_predicted_masks = ''
+                zoom_path_imgs = ''
+                zoom_path_masks = ''
                 for x in file_ARIKIT:
                     coreml_data.append(x)
                 file_ARIKIT.close()
                 # Get list of images within img folder. We don't get the mask folder here
-                list_of_images = glob.glob(image_directory + "/" + folders + "/imgs/*.jpg")
+                list_of_images = glob.glob(image_directory + "/" + folders + "/imgs/*.png")
                 # Define the UNET model we need for prediction
                 model.load_state_dict(torch.load(loading_model))
                 # Start to read each image within the list of images we already have
@@ -149,74 +148,48 @@ def main(list_of_models, dataset_path):
                     unrolled_image = ndimage.rotate(cv2.imread(images), (roll * 180) / math.pi)
                     s1 = images.split('/')
                     s2 = s1[len(s1) - 1].split('.')
-                    mask_path = '/'
+                    mask_path = ''
+                    for i in range(0, len(s1) - 2):
+                        mask_path += s1[i] + "/"
+                    print(mask_path)
+                    mask_path += "masks/" + s2[0] + ".bmp"
                     unrolled_path_imgs = unrolled_path + s1[len(s1) - 4] + '/' + s1[len(s1) - 3] + \
                                          "/imgs/" + s2[0] + ".png"
                     unrolled_path_masks = unrolled_path + s1[len(s1) - 4] + '/' + s1[len(s1) - 3] + \
-                                         "/masks/" + s2[0] + ".bmp"
+                                         "/masks/" + s2[0] + ".png"
                     unrolled_path_predicted_masks = unrolled_path + s1[len(s1) - 4] + '/' + s1[len(s1) - 3] + \
-                                         "/masks predicted/" + s2[0] + ".bmp"
+                                         "/masks predicted/" + s2[0] + ".png"
                     zoom_path_predicted_masks = zoom_path + s1[len(s1) - 4] + '/' + s1[len(s1) - 3] + \
-                                         "/masks predicted/" + s2[0] + ".bmp"
+                                         "/masks predicted/" + s2[0] + ".png"
                     zoom_path_masks = zoom_path + s1[len(s1) - 4] + '/' + s1[len(s1) - 3] + \
                                          "/masks/" + s2[0] + ".png"
                     zoom_path_imgs = zoom_path + s1[len(s1) - 4] + '/' + s1[len(s1) - 3] + \
                                          "/imgs/" + s2[0] + ".png"
-
-                    for i in range(0, len(s1) - 2):
-                        mask_path += s1[i] + "/"
-                    mask_path += "masks/" + s2[0] + ".png"
                     unrolled_mask = ndimage.rotate(cv2.imread(mask_path), (roll * 180) / math.pi)
-                    _, result = cv2.threshold(unrolled_mask, 127, 255, cv2.THRESH_BINARY)
-                    result = result[:,:, 1]
-
-                    # The following section find the mean or median height of the predicted component
-                    rows_result = np.where(result > 0)[0]  # height
-                    columns_result = np.where(result > 0)[1]  # width
-                    minX_result = np.amin(np.where(result > 0)[1])
-                    maxX_result = np.amax(np.where(result > 0)[1])
-                    av_height_result = []
-                    bottom_height_result = []
-                    for items in range(minX_result, maxX_result + 1):
-                        flag = False
-                        for i in range(0, len(rows_result)):
-                            if columns_result[i] == items:
-                                if not flag:
-                                    flag = True
-                                    min_Y_result = rows_result[i]
-                                    max_Y_result = rows_result[i]
-                                if min_Y_result > rows_result[i]:
-                                    min_Y_result = rows_result[i]
-                                if max_Y_result < rows_result[i]:
-                                    max_Y_result = rows_result[i]
-                        if flag:
-                            av_height_result.append((max_Y_result - min_Y_result) + 1)
-                            bottom_height_result.append(max_Y_result)
-                    # Estimate the distance based on James Algorithm
-                    distace_par_result1 = distanceMeasuring(statistics.median(av_height_result),
-                                                    statistics.median(bottom_height_result), pitch, h0)
-
-
+                    # print(unrolled_path_masks, unrolled_path_imgs, unrolled_path_predicted_masks)
+                    print(zoom_path_masks, zoom_path_imgs, zoom_path_predicted_masks)
+                    # imageShow(unrolled_image)
                     name = images.split("/")
                     # cv2.imwrite("/home/skeri/im1/" + name[len(name) - 3] + name[len(name) - 1], unrolled_image)
                     # Crop top left corner of the unrolled image
                     cropped_from_original = unrolled_image[0:1440, 0:1440]
                     cropped_mask_original = unrolled_mask[0:1440, 0:1440]
+                    # Write images and masks
+                    cv2.imwrite(unrolled_path_imgs, cropped_from_original)
+                    cv2.imwrite(unrolled_path_masks, cropped_mask_original)
                     # cv2.imwrite("/home/skeri/im2/" + name[len(name) - 3] + name[len(name) - 1], cropped_from_original)
                     # Prepare cropped unrolled image for prediction. This step includes converting 'numpy.ndarray' image
                     # to 'torch.utils.data.dataloader.DataLoader'
                     to_predict = next(iter(get_data_loaders(cropped_from_original)))
                     # Predict the data and then resize the output to 1440x1440 image size
                     output = UNET_segmentation(to_predict, 1440)
-                    TP0, FP0, FN0 = Gio_precision_recall(
-                        cv2.cvtColor(cropped_mask_original, cv2.COLOR_BGR2GRAY), output)
+                    cv2.imwrite(unrolled_path_predicted_masks, output)
+
+                    TP0, FP0, FN0 = Gio_precision_recall(cropped_mask_original, output)
                     # It labels different detected components of the predicted image. Here we try to only consider the
                     # biggest connected components and remove small ones. It helps us to only consider closest sign.
                     # To see the result uncomment imageShow
                     output = find_connected_components(output, 1440)
-                    _, output = cv2.threshold(output, 0, 255, cv2.THRESH_BINARY)
-                    cv2.imwrite(unrolled_path_imgs, cropped_from_original)
-                    cv2.imwrite(unrolled_path_predicted_masks, output)
                     # imageShow(output)
                     # cv2.imwrite("/home/skeri/im3/" + name[len(name) - 3] + name[len(name) - 1], output)
                     # Next step to Zoom into detected area. To do that we find the center of biggest detected connected
@@ -229,39 +202,10 @@ def main(list_of_models, dataset_path):
                     if np.where(output > 0)[0].size == 0:
                         print(images + "\n")
                     else:
-                        result = output
-                        # The following section find the mean or median height of the predicted component
-                        rows_result = np.where(result > 0)[0]  # height
-                        columns_result = np.where(result > 0)[1]  # width
-                        minX_result = np.amin(np.where(result > 0)[1])
-                        maxX_result = np.amax(np.where(result > 0)[1])
-                        av_height_result = []
-                        bottom_height_result = []
-                        for items in range(minX_result, maxX_result + 1):
-                            flag = False
-                            for i in range(0, len(rows_result)):
-                                if columns_result[i] == items:
-                                    if not flag:
-                                        flag = True
-                                        min_Y_result = rows_result[i]
-                                        max_Y_result = rows_result[i]
-                                    if min_Y_result > rows_result[i]:
-                                        min_Y_result = rows_result[i]
-                                    if max_Y_result < rows_result[i]:
-                                        max_Y_result = rows_result[i]
-                            if flag:
-                                av_height_result.append((max_Y_result - min_Y_result) + 1)
-                                bottom_height_result.append(max_Y_result)
-                        # Estimate the distance based on James Algorithm
-                        distace_par_result2 = distanceMeasuring(statistics.median(av_height_result),
-                                                                statistics.median(bottom_height_result), pitch, h0)
                         minY = np.amin(np.where(output > 0)[0])
                         minX = np.amin(np.where(output > 0)[1])
                         maxY = np.amax(np.where(output > 0)[0])
                         maxX = np.amax(np.where(output > 0)[1])
-                        X_CENTER = str(int((maxX + minX) / 2))  # Center X
-                        Y_CENTER = str(int((maxY + minY) / 2))   # Center Y
-
                         if int(((maxX + minX) / 2) - 224) > 0:
                             top_corner_X = int(((maxX + minX) / 2) - 224)
                         else:
@@ -274,15 +218,21 @@ def main(list_of_models, dataset_path):
                                          top_corner_Y:top_corner_Y + 448,
                                          top_corner_X:top_corner_X + 448]
 
-                        Mask_image = cv2.cvtColor(cropped_mask_original[
+                        Mask_image = cropped_mask_original[
                                                   top_corner_Y:top_corner_Y + 448,
-                                                  top_corner_X:top_corner_X + 448], cv2.COLOR_BGR2GRAY)
+                                                  top_corner_X:top_corner_X + 448]
+                        cv2.imwrite(zoom_path_imgs, detected_image)
+                        cv2.imwrite(zoom_path_masks, Mask_image)
                         # imageShow(detected_image)
                         # imageShow(Mask_image)
                         # cv2.imwrite("/home/skeri/im4/" + name[len(name) - 3] + name[len(name) - 1], detected_image)
                         # Second round of UNET segmentation. It tries to segment cropped 448 x 448 images from last step
                         to_predict = next(iter(get_data_loaders(detected_image)))
                         output = UNET_segmentation(to_predict, 448)
+                        cv2.imwrite(zoom_path_predicted_masks, output)
+                        cv2.imshow('image', output)
+                        cv2.waitKey(1000)
+                        exit(0)
                         TP3, FP3, FN3 = Gio_precision_recall(Mask_image, output)
                         TP1 += TP0
                         FP1 += FP0
@@ -294,9 +244,6 @@ def main(list_of_models, dataset_path):
                         # Labels different detected components of the predicted image. Here we try to only consider the
                         # biggest connected components and remove small ones. It helps us to only consider closest sign.
                         output = find_connected_components(output, 448)
-                        _, output = cv2.threshold(output, 0, 255, cv2.THRESH_BINARY)
-                        cv2.imwrite(zoom_path_predicted_masks, output)
-                        cv2.imwrite(zoom_path_imgs, detected_image)
                         # The following section find the mean or median height of the predicted component
                         rows = np.where(output > 0)[0]  # height
                         columns = np.where(output > 0)[1]  # width
@@ -318,7 +265,7 @@ def main(list_of_models, dataset_path):
                                         max_Y = rows[i]
                             if flag:
                                 av_height.append((max_Y - min_Y) + 1)
-                                bottom_height.append(max_Y + top_corner_Y)
+                                bottom_height.append(max_Y)
                         # Estimate the distance based on James Algorithm
                         distace_par = distanceMeasuring(statistics.median(av_height),
                                                         statistics.median(bottom_height), pitch, h0)
@@ -337,8 +284,6 @@ def main(list_of_models, dataset_path):
                                             " " + str(distace_par) +  # Estimated Distance
                                             " " + str(statistics.median(av_height)) +  # Height of Detected Sign
                                             " " + str(statistics.median(bottom_height)) +  # Bottom Row of Detected Sign
-                                            # " " + str(maxY - minY) +  # Height of Detected Sign
-                                            # " " + str(maxY) +  # Bottom Row of Detected Sign
                                             " " + str(TP0) +  # TP for First UNET Single Image
                                             " " + str(FP0) +  # FP for First UNET Single Image
                                             " " + str(FN0) +  # FN for First UNET Single Image
@@ -349,20 +294,16 @@ def main(list_of_models, dataset_path):
                                             " " + str(FN3) +  # FN for Second UNET Single Image
                                             " " + str(TP3 / (TP3 + FP3)) +  # Precision
                                             " " + str(TP3 / (TP3 + FN3)) +  # Recall
-                                            " " + X_CENTER +  # Center X
-                                            " " + Y_CENTER +  # Center Y
-                                            " " + str(distace_par_result1) +
-                                            " " + str(distace_par_result2) +
                                             "\n")
                         # Add estimated distance for each particular distance to the array for plotting
-                        distances.append(distace_par )
+                        distances.append(distace_par)
             # Add each distance data to the array for final plotting
             list_of_distances.append(distances)
             recall1.append(TP1 / (TP1 + FN1))  # Recall
             precision1.append(TP1 / (TP1 + FP1))  # Precision
             recall2.append(TP2 / (TP2 + FN2))  # Recall
             precision2.append(TP2 / (TP2 + FP2))  # Precision
-    # file_to_write.write(str(precision1) + " " + str(precision2) + " " + str(recall1) + " " + str(recall2) + "\n")
+    file_to_write.write(str(precision1) + " " + str(precision2) + " " + str(recall1) + " " + str(recall2) + "\n")
     axes = plt.gca()
     axes.plot(precision1)
     axes.plot(precision1, label="Precision UNET#1", color='red')
@@ -377,7 +318,6 @@ def main(list_of_models, dataset_path):
     plt.cla()
     # print(precision1, precision2, recall1, recall2)
     counter = 2
-    print(list_of_distances)
     for items in list_of_distances:
         axes = plt.gca()
         axes.plot(items)
@@ -389,12 +329,13 @@ def main(list_of_models, dataset_path):
     file_to_write.close()
 
 
+
 if __name__ == '__main__':
     # Path to trained models. In case we want to test multiple models we put them under one directory
     model_path = "/home/skeri/tentorch/results/trained_models/ali_best/trained/"
     path_to_models = glob.glob(model_path + "*.pth")
     # Path to image dataset which follows Giovannies pattern (Each folder has ARKIT data as txt)
-    database_path = "/home/skeri/Gio_orig_dataset/Exit Signs by Distance/"
+    database_path = "/home/skeri/Dropbox (ski.org)/Sign_Detection/datasets/Exit Signs by Distance (8bit BMP masks)/"
     # Define the UNET model we need for prediction
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = MobileNetV2_unet()

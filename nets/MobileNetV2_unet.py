@@ -62,31 +62,19 @@ class MobileNetV2_unet(nn.Module):
         x5 = x
         logging.debug((x5.shape, 'x5'))
 
-        up1 = torch.cat([
-            x4,
-            self.dconv1(x)
-        ], dim=1)
+        up1 = torch.cat([x4, self.dconv1(x)], dim=1)
         up1 = self.invres1(up1)
         logging.debug((up1.shape, 'up1'))
 
-        up2 = torch.cat([
-            x3,
-            self.dconv2(up1)
-        ], dim=1)
+        up2 = torch.cat([x3, self.dconv2(up1)], dim=1)
         up2 = self.invres2(up2)
         logging.debug((up2.shape, 'up2'))
 
-        up3 = torch.cat([
-            x2,
-            self.dconv3(up2)
-        ], dim=1)
+        up3 = torch.cat([x2, self.dconv3(up2)], dim=1)
         up3 = self.invres3(up3)
         logging.debug((up3.shape, 'up3'))
 
-        up4 = torch.cat([
-            x1,
-            self.dconv4(up3)
-        ], dim=1)
+        up4 = torch.cat([x1, self.dconv4(up3)], dim=1)
         up4 = self.invres4(up4)
         logging.debug((up4.shape, 'up4'))
 
